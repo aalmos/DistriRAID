@@ -1,0 +1,3 @@
+[target.x86_64-unknown-linux-gnu.jerasure]
+rustc-link-search = ["/home/ahomolya/Developer/jerasure/install/lib"]
+rustc-link-lib = ["Jerasure"]
