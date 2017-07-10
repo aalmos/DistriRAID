@@ -3,9 +3,12 @@ extern crate libc;
 use libc::{c_int, calloc, malloc};
 use std::io::Result;
 use std::mem::size_of;
+use std::vec::Vec;
 
 type Schedule = *mut *mut c_int;
 type BitMatrix = *mut c_int;
+type BlockArray = *mut *mut u8;
+type RawByteBuffer = *mut u8;
 
 #[link(name = "Jerasure", kind = "static")]
 #[link(name = "gf_complete", kind = "static")]
@@ -26,8 +29,8 @@ extern {
 
     fn jerasure_schedule_encode(k: c_int, m: c_int, w: c_int,
                                 schedule: Schedule,
-                                data_ptrs: *mut *mut u8,
-                                coding_ptrs: *mut *mut u8,
+                                data_ptrs: BlockArray,
+                                coding_ptrs: BlockArray,
                                 size: c_int, packetsize: c_int);
 }
 
@@ -42,10 +45,10 @@ struct Liber8tionCodec {
 
 impl Liber8tionCodec {
 
-    fn _allocate_blocks(n: usize, size: usize) -> *mut *mut u8
+    fn _allocate_blocks(n: usize, size: usize) -> BlockArray
     {
         unsafe {
-            let data = calloc(size_of::<*mut u8>(), n) as *mut *mut u8;
+            let data = calloc(size_of::<*mut u8>(), n) as BlockArray;
             for i in 0..n {
                 let block = data.offset(i as isize);
                 std::ptr::write(block, calloc(size_of::<u8>(), size) as *mut u8);
@@ -54,7 +57,7 @@ impl Liber8tionCodec {
         }
     }
 
-    fn _free_blocks(data: *mut *mut u8, n: usize)
+    fn _free_blocks(data: BlockArray, n: usize)
     {
         unsafe {
             for i in 0..n {
@@ -103,7 +106,7 @@ impl Liber8tionCodec {
 
         unsafe {
             let mut fake_data = calloc(size_of::<u8>(), new_size) as *mut u8;
-            let mut data = calloc(size_of::<*mut u8>(), self._k as usize) as *mut *mut u8;
+            let mut data = calloc(size_of::<*mut u8>(), self._k as usize) as BlockArray;
             let mut coding = Liber8tionCodec::_allocate_blocks(self._m as usize, block_size);
             let mut input_ptr = fake_data;//input.as_ptr();
 
