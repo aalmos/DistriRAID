@@ -14,12 +14,16 @@ use rand::Rng;
 
 fn main() {
     let codec = Liber8tionCodec::new();
+    
     codec.print_bit_matrix();
-    let rstr: String = rand::thread_rng()
+    
+    let input: String = rand::thread_rng()
         .gen_ascii_chars()
-        .take(500)
+        .take(24576)
         .collect();
-
+    
+    codecs::encode_simple(&input.as_bytes());
+/*
     //let input = [42u8; 15000];
     let (data, parity) = codec.encode(&rstr.as_bytes());
 
@@ -47,4 +51,5 @@ fn main() {
     //let input = [0u8, 10];
 
     //codec.encode(&input, &mut output);
+*/
 }

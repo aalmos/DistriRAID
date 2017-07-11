@@ -6,9 +6,9 @@ use libc::c_int;
 use std::vec::Vec;
 
 static LIBER8TION_W: i32 = 8;
-static LIBER8TION_K: i32 = 6;
+static LIBER8TION_K: i32 = 7;
 static LIBER8TION_M: i32 = 2;
-static LIBER8TION_PACKET_SIZE: i32 = 8;
+static LIBER8TION_PACKET_SIZE: i32 = 64;
 
 static WORD_SIZE: i32 = 8;
 
@@ -16,8 +16,8 @@ type Schedule = *mut *mut c_int;
 type BitMatrix = *mut c_int;
 type RawBlockBuffer = *mut *mut u8;
 
-#[link(name = "Jerasure", kind = "static")]
-#[link(name = "gf_complete", kind = "static")]
+#[link(name = "Jerasure")]
+#[link(name = "gf_complete")]
 extern {
     fn liber8tion_coding_bitmatrix(k: c_int) -> BitMatrix;
 
@@ -41,6 +41,57 @@ extern {
         block_size: c_int,
         packet_size: c_int
     );
+}
+
+pub fn encode_simple(data: &[u8]) {
+    let w = 8;
+    let m = 2;
+    
+    let k = 6;
+
+    let packet_size = 64;
+
+    let mut new_size = data.len();
+
+    let min_data_size = k * w * packet_size * 8;
+
+    println!("min_data_size {:?}", min_data_size);
+
+    if data.len() % (k * w * packet_size * 8) != 0 {
+        while new_size % (k * w * packet_size * 8) != 0 {
+            new_size += 1;
+        }
+    }
+
+    let block_size = new_size / k;
+    let padding_size = new_size - data.len();
+
+    let mut data_vec = data.to_vec();
+    let mut parity_vec = vec![0u8; m * block_size];
+
+    data_vec.append(&mut vec![0u8; padding_size]);
+    
+    unsafe {
+        let mut bit_matrix = liber8tion_coding_bitmatrix(k as i32);
+        let mut schedule = jerasure_smart_bitmatrix_to_schedule(k as i32, m as i32, w as i32, bit_matrix);
+    
+        let mut data_ptrs: Vec<_> = data_vec.chunks_mut(block_size).map(|x| x.as_mut_ptr()).collect();
+        let mut parity_ptrs: Vec<_> = parity_vec.chunks_mut(block_size).map(|x| x.as_mut_ptr()).collect();
+
+        jerasure_schedule_encode(k as i32, m as i32, w as i32, schedule, data_ptrs.as_mut_ptr(), parity_ptrs.as_mut_ptr(), block_size as i32, packet_size as i32);
+        
+        println!("DATA");
+        
+        for chunk in data_vec.chunks(block_size) {
+            println!("{:?}", chunk);
+        }
+
+        println!("PARITY");
+        
+        for chunk in parity_vec.chunks(block_size) {
+            println!("{:?}", chunk);
+        }
+    }
 }
 
 pub trait Codec {
@@ -146,6 +197,6 @@ impl Codec for Liber8tionCodec {
     }
 
     fn chunk_size(&self) -> usize {
-        (self._k * self._w * self._packet_size) as usize
+        (self._k * self._w * self._packet_size * WORD_SIZE) as usize
     }
 }
