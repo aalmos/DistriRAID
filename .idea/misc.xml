@@ -38,11 +38,8 @@
       <property name="caretWidth" class="java.lang.Integer" />
     </properties>
   </component>
-  <component name="ProjectRootManager">
-    <output url="file://$PROJECT_DIR$/out" />
-  </component>
   <component name="RustProjectSettings">
-    <option name="toolchainHomeDirectory" value="C:\Users\ahomolya\.cargo\bin" />
+    <option name="toolchainHomeDirectory" value="/usr/bin" />
   </component>
   <component name="masterDetails">
     <states>
