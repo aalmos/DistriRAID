@@ -1,64 +1,82 @@
 use std::vec::Vec;
-
-pub type RawBuffer = *mut u8;
+use std::ops::Index;
+use std::slice;
 
 pub struct BlockBuffer {
-    _blocks: Vec<RawBuffer>,
+    _data_blocks: Vec<*mut u8>,
+    _parity_blocks: Vec<*mut u8>,
     _buffer: Vec<u8>,
-    _original_size: usize,
-    _block_size: usize
+    _data_size: usize,
+    _block_size: usize,
 }
 
 impl BlockBuffer {
-    pub fn new(block_count: usize, block_size: usize) -> BlockBuffer {
-        let mut buffer = vec![0u8; block_count * block_size];
-        BlockBuffer::from_raw_padded(buffer, block_count, block_size)
-    }
+    pub fn from_data_buffer(mut data_buffer: Vec<u8>,
+                            block_size: usize,
+                            data_block_count: usize,
+                            parity_block_count: usize) -> BlockBuffer {
+        let original_data_size = data_buffer.len();
+        let desired_buffer_size = (data_block_count + parity_block_count) * block_size;
+        let padding_size = desired_buffer_size - original_data_size;
 
-    pub fn from_raw_fitting(mut buffer: Vec<u8>, block_size: usize) -> BlockBuffer {
-        let mut block_count = buffer.len() / block_size;
+        data_buffer.append(&mut vec![0u8; padding_size]);
+        data_buffer.shrink_to_fit();
 
-        if block_count * block_size < buffer.len() {
-            block_count += 1;
-        }
+        let all_blocks = data_buffer
+            .chunks_mut(block_size)
+            .map(|x| x.as_mut_ptr())
+            .collect::<Vec<_>>();
 
-        BlockBuffer::from_raw_padded(buffer, block_count, block_size)
-    }
-
-    pub fn from_raw_padded(mut buffer: Vec<u8>, block_count: usize, block_size: usize) -> BlockBuffer {
-        assert!(buffer.len() <= block_count * block_size, "input buffer exceeds given size");
-
-        let desired_size = block_count * block_size;
-        let original_size = buffer.len();
-        let remaining = desired_size - original_size;
-
-        if remaining > 0 {
-            buffer.append(&mut vec![0u8; remaining]);
-        }
-
-        buffer.shrink_to_fit();
+        let (data_blocks, parity_blocks) = all_blocks.split_at(data_block_count);
 
         BlockBuffer {
-            _blocks: buffer.chunks_mut(block_size).map(|x| x.as_mut_ptr()).collect(),
-            _buffer: buffer,
-            _original_size: original_size,
+            _data_blocks: data_blocks.to_vec(),
+            _parity_blocks: parity_blocks.to_vec(),
+            _buffer: data_buffer,
+            _data_size: original_data_size,
             _block_size: block_size
         }
     }
 
-    pub fn as_ptr(&self) -> *const *mut u8 {
-        self._blocks.as_ptr()
+    pub fn data_blocks(&self) -> &[*mut u8] {
+        &self._data_blocks
     }
 
-    pub fn as_mut_ptr(&mut self) -> *mut *mut u8 {
-        self._blocks.as_mut_ptr()
+    pub fn data_blocks_mut(&mut self) -> &mut [*mut u8] {
+        &mut self._data_blocks
+    }
+
+    pub fn parity_blocks(&self) -> &[*mut u8] {
+        &self._parity_blocks
+    }
+
+    pub fn parity_blocks_mut(&mut self) -> &mut [*mut u8] {
+        &mut self._parity_blocks
     }
 
     pub fn block_size(&self) -> usize {
         self._block_size
     }
+}
 
-    pub fn block_count(&self) -> usize {
-        self._blocks.len()
+impl Index<usize> for BlockBuffer {
+    type Output = [u8];
+
+    fn index(&self, index: usize) -> &[u8] {
+        assert!(index < self._data_blocks.len() + self._parity_blocks.len());
+
+        unsafe {
+            if index < self._data_blocks.len() {
+                slice::from_raw_parts(
+                    self._data_blocks[index],
+                    self._block_size
+                )
+            } else {
+                slice::from_raw_parts(
+                    self._parity_blocks[index - self._data_blocks.len()],
+                    self._block_size
+                )
+            }
+        }
     }
 }

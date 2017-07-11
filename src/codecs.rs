@@ -100,7 +100,7 @@ pub trait Codec {
     fn total_block_count(&self) -> usize;
     fn chunk_size(&self) -> usize;
 
-    fn encode(&self, input: &[u8]) -> (BlockBuffer, BlockBuffer);
+    fn encode(&self, input: &[u8]) -> BlockBuffer;
     fn decode(&self, input: &BlockBuffer) -> Vec<u8>;
 }
 
@@ -154,30 +154,28 @@ impl Drop for Liber8tionCodec {
 }
 
 impl Codec for Liber8tionCodec {
-    fn encode(&self, input: &[u8]) -> (BlockBuffer, BlockBuffer) {
+    fn encode(&self, input: &[u8]) -> BlockBuffer {
         let mut input_vec = input.to_vec();
-        let chunk_size = self.chunk_size();
         let padding_size = input_vec.len() % self.chunk_size();
         let block_size = (input_vec.len() + padding_size) as usize / self.data_block_count();
 
-        let mut data_blocks = BlockBuffer::from_raw_padded(
-            input_vec,
+        let mut result = BlockBuffer::from_data_buffer(
+            input_vec, block_size,
             self.data_block_count(),
-            block_size
+            self.parity_block_count()
         );
-
-        let mut parity_blocks = BlockBuffer::new(self.parity_block_count(), block_size);
 
         unsafe {
             jerasure_schedule_encode(
                 self._k, self._m, self._w, self._schedule,
-                data_blocks.as_mut_ptr(),
-                parity_blocks.as_mut_ptr(), block_size as c_int,
+                result.data_blocks_mut().as_mut_ptr(),
+                result.parity_blocks_mut().as_mut_ptr(),
+                block_size as c_int,
                 self._packet_size
             );
         }
 
-        (data_blocks, parity_blocks)
+        result
     }
 
     fn decode(&self, input: &BlockBuffer) -> Vec<u8> {
