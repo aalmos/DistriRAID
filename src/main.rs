@@ -17,7 +17,7 @@ fn main() {
     
     let result = codec.encode(input.as_bytes());
 
-    for i in 0..result.total_block_count() as usize {
-        println!("{:?}", result[i]);
-    }
+//    for i in 0..result.total_block_count() as usize {
+//        println!("{:?}", result[i]);
+//    }
 }

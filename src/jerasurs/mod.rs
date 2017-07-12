@@ -7,6 +7,8 @@ use std::vec::Vec;
 
 use self::native::BitMatrix;
 use self::native::Schedule;
+use self::native::ScheduleCache;
+use self::native::RawBlockBuffer;
 
 use self::buffer::BlockBuffer;
 
@@ -18,7 +20,10 @@ pub struct Codec {
     _m: c_int,
     _packet_size: c_int,
     _bit_matrix: BitMatrix,
-    _schedule: Schedule
+    _schedule: Schedule,
+    _schedule_cache: ScheduleCache,
+    _encoding_technique: fn(&Codec, &mut BlockBuffer),
+    _decoding_technique: fn(&Codec, &mut BlockBuffer) -> bool
 }
 
 impl Codec {
@@ -33,20 +38,16 @@ impl Codec {
             self.parity_block_count()
         );
 
-        unsafe {
-            native::jerasure_schedule_encode(
-                self._k, self._m, self._w, self._schedule,
-                result.data_blocks_mut().as_mut_ptr(),
-                result.parity_blocks_mut().as_mut_ptr(),
-                block_size as c_int,
-                self._packet_size
-            );
-        }
+        (self._encoding_technique)(self, &mut result);
 
         result
     }
 
-    pub fn decode(&self, input: &BlockBuffer) -> Vec<u8> {
+    pub fn decode(&self, input: &mut BlockBuffer) -> Option<Vec<u8>> {
+        if !(self._decoding_technique)(self, input) {
+            return None;
+        }
+        
         unimplemented!()
     }
 
@@ -83,6 +84,7 @@ impl Drop for Codec {
         unsafe {
             free(self._bit_matrix as *mut c_void);
             native::jerasure_free_schedule(self._schedule);
+            native::jerasure_free_schedule_cache(self._k, self._w, self._schedule_cache);
         }
     }
 }
