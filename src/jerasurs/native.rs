@@ -1,27 +1,27 @@
-extern crate libc;
+use libc::c_int;
 
-type Schedule = *mut *mut c_int;
-type BitMatrix = *mut c_int;
-type RawBlockBuffer = *mut *mut u8;
+pub type Schedule = *mut *mut c_int;
+pub type BitMatrix = *mut c_int;
+pub type RawBlockBuffer = *mut *mut u8;
 
 #[link(name = "Jerasure")]
 #[link(name = "gf_complete")]
 extern {
-    fn liber8tion_coding_bitmatrix(k: c_int) -> BitMatrix;
+    pub fn liber8tion_coding_bitmatrix(k: c_int) -> BitMatrix;
 
-    fn jerasure_print_bitmatrix(
+    pub fn jerasure_print_bitmatrix(
         bit_matrix: BitMatrix,
         n: c_int, m: c_int, w: c_int
     );
 
-    fn jerasure_smart_bitmatrix_to_schedule(
+    pub fn jerasure_smart_bitmatrix_to_schedule(
         k: c_int, m: c_int, w: c_int,
         bit_matrix: BitMatrix
     ) -> Schedule;
 
-    fn jerasure_free_schedule(schedule: Schedule);
+    pub fn jerasure_free_schedule(schedule: Schedule);
 
-    fn jerasure_schedule_encode(
+    pub fn jerasure_schedule_encode(
         k: c_int, m: c_int, w: c_int,
         schedule: Schedule,
         data_in: RawBlockBuffer,

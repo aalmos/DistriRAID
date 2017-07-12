@@ -1,19 +1,12 @@
-extern crate libc;
 extern crate rand;
+extern crate libc;
 
-mod codecs;
-mod buffers;
+mod jerasurs;
 
-use libc::{c_int, calloc, malloc};
-use std::io::Result;
-use std::mem::size_of;
-use std::vec::Vec;
-use codecs::Liber8tionCodec;
-use codecs::Codec;
 use rand::Rng;
 
 fn main() {
-    let codec = Liber8tionCodec::new();
+    let codec = jerasurs::codecs::liber8tion::create(6, 64);
     
     codec.print_bit_matrix();
     
@@ -22,7 +15,11 @@ fn main() {
         .take(24576)
         .collect();
     
-    codecs::encode_simple(&input.as_bytes());
+    let result = codec.encode(input.as_bytes());
+
+    for i in 0..result.total_block_count() as usize {
+        println!("{:?}", result[i]);
+    }
 /*
     //let input = [42u8; 15000];
     let (data, parity) = codec.encode(&rstr.as_bytes());

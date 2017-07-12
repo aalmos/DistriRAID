@@ -57,6 +57,10 @@ impl BlockBuffer {
     pub fn block_size(&self) -> usize {
         self._block_size
     }
+
+    pub fn total_block_count(&self) -> usize {
+        self._data_blocks.len() + self._parity_blocks.len()
+    }
 }
 
 impl Index<usize> for BlockBuffer {
