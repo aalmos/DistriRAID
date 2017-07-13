@@ -75,7 +75,7 @@ pub mod liber8tion {
             }
 
             for id in erasures[0..erasures.len() - 1].iter() {
-                buffer.mark_present(*id as usize);
+                buffer.mark_block_as_restored(*id as usize);
             }
 
             true

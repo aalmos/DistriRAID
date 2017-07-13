@@ -85,6 +85,27 @@ pub struct BlockBuffer {
 }
 
 impl BlockBuffer {
+
+    pub fn new(block_size: usize,
+               data_block_count: usize,
+               parity_block_count: usize) -> BlockBuffer {
+
+        let mut data_buffer = vec![0u8; data_block_count * block_size];
+
+        let mut result = BlockBuffer::from_data_buffer(
+            data_buffer,
+            block_size,
+            data_block_count,
+            parity_block_count
+        );
+
+        for i in 0..result.block_size() as usize {
+            result.erase_block(i, false);
+        }
+
+        result
+    }
+
     pub fn from_data_buffer(mut data_buffer: Vec<u8>,
                             block_size: usize,
                             data_block_count: usize,
@@ -201,19 +222,31 @@ impl BlockBuffer {
         }
     }
 
-    pub fn mark_present(&mut self, id: usize) {
-        self._blocks[id] = Some(Block::for_buffer_view(id, self._blocks_raw[id], self._block_size));
+    pub fn mark_block_as_restored(&mut self, id: usize) {
+        self._blocks[id] = Some(
+            Block::for_buffer_view(id, self._blocks_raw[id], self._block_size)
+        );
     }
 
-    pub fn mark_absent(&mut self, id: usize) {
-        self._blocks[id] = None;
-    }
 
-    pub fn overwrite_block(&mut self, id: usize, data: &[u8]) {
+    pub fn write_block(&mut self, id: usize, data: &[u8]) {
         assert!(data.len() <= self._block_size);
 
         let start = id * self._block_size;
         let end = start + data.len();
         self._buffer[start..end].clone_from_slice(data);
+    }
+
+    pub fn erase_block(&mut self, id: usize, with_zeros: bool) {
+        self._blocks[id] = None;
+
+        if with_zeros {
+            let start = id * self._block_size;
+            let end = start + self._block_size;
+
+            self._buffer[start..end].clone_from_slice(
+                vec![0u8; self._block_size].as_slice()
+            );
+        }
     }
 }
