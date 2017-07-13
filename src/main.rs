@@ -15,9 +15,22 @@ fn main() {
         .take(24576)
         .collect();
     
-    let result = codec.encode(input.as_bytes());
+    let mut encoded = codec.encode(input.as_bytes());
+    let damage =vec![0u8; encoded.block_size()];
 
-//    for i in 0..result.total_block_count() as usize {
-//        println!("{:?}", result[i]);
-//    }
+    encoded.overwrite_block(0, damage.as_slice());
+    encoded.mark_absent(0);
+    encoded.overwrite_block(4, damage.as_slice());
+    encoded.mark_absent(4);
+
+    let decoded = codec.decode(&mut encoded);
+
+    match decoded {
+        Some(data) => {
+            assert_eq!(data, input.as_bytes());
+        },
+        None => {
+            println!("fuck");
+        }
+    }
 }

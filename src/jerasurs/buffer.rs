@@ -1,5 +1,4 @@
 use std::vec::Vec;
-use std::ops::Index;
 use std::option::Option;
 use std::slice;
 use std::mem;
@@ -44,9 +43,20 @@ impl Block {
         self._id
     }
 
+    pub fn clone_from_slice(&mut self, data: &[u8]) {
+        assert!(data.len() <= self._size);
+        self.data_mut().clone_from_slice(data);
+    }
+
     pub fn data(&self) -> &[u8] {
         unsafe {
             slice::from_raw_parts(self._data, self._size)
+        }
+    }
+
+    pub fn data_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            slice::from_raw_parts_mut(self._data, self._size)
         }
     }
 }
@@ -67,6 +77,7 @@ pub struct BlockBuffer {
     _is_data_accessible: bool,
 
     _blocks: Vec<Option<Block>>,
+    _blocks_raw: Vec<*mut u8>,
     _block_size: usize,
 
     _data_block_count: usize,
@@ -78,6 +89,9 @@ impl BlockBuffer {
                             block_size: usize,
                             data_block_count: usize,
                             parity_block_count: usize) -> BlockBuffer {
+
+        assert!(data_buffer.len() <= block_size * data_block_count);
+
         let original_data_size = data_buffer.len();
         let total_block_count = data_block_count + parity_block_count;
         let desired_buffer_size = total_block_count * block_size;
@@ -86,34 +100,86 @@ impl BlockBuffer {
         data_buffer.append(&mut vec![0u8; padding_size]);
         data_buffer.shrink_to_fit();
 
-        let all_blocks = data_buffer.chunks_mut(block_size)
-            .zip(0..total_block_count)
-            .map(|(c, i)| Some(Block::for_buffer_view(i, c.as_mut_ptr(), block_size)))
+        let mut blocks_raw = data_buffer.chunks_mut(block_size)
+            .map(|c| c.as_mut_ptr())
+            .collect::<Vec<_>>();
+
+        let blocks = blocks_raw.iter_mut().zip(0..)
+            .map(|(p, i)| Some(Block::for_buffer_view(i, *p, block_size)))
             .collect::<Vec<_>>();
 
         BlockBuffer {
             _buffer: data_buffer,
             _data_size: original_data_size,
             _is_data_accessible: true,
-            _blocks: all_blocks,
+            _blocks: blocks,
+            _blocks_raw: blocks_raw,
             _block_size: block_size,
             _data_block_count: data_block_count,
             _parity_block_count: parity_block_count
         }
     }
 
-    pub fn data_ptrs(&mut self) -> Vec<*mut u8> {
-        self._buffer.chunks_mut(self._block_size)
+    pub fn from_blocks(blocks: &[Block],
+                       block_size: usize,
+                       data_block_count: usize,
+                       parity_block_count: usize,
+                       data_size: usize) -> BlockBuffer {
+
+        let block_count = data_block_count + parity_block_count;
+
+        assert!(blocks.iter().all(|b| b.data().len() == block_size));
+        assert!(blocks.len() <= block_count);
+
+        let mut buffer = vec![0u8; block_count * block_size];
+        buffer.shrink_to_fit();
+
+        let blocks_raw = buffer.chunks_mut(block_size)
             .map(|c| c.as_mut_ptr())
-            .take(self._data_block_count)
-            .collect()
+            .collect::<Vec<_>>();
+
+        let mut block_opts = blocks_raw.iter().map(|_| None).collect::<Vec<Option<Block>>>();
+
+        let mut data_blocks_found = 0;
+
+        for block in blocks.iter() {
+            unsafe {
+                assert!(block_opts[block.id()].is_none());
+
+                if block.id() < data_block_count {
+                    data_blocks_found += 1;
+                }
+
+                let mut new_block = Block::for_buffer_view(
+                    block.id(),
+                    buffer.as_mut_ptr().offset((block.id() * block_size) as isize),
+                    block_size
+                );
+
+                new_block.clone_from_slice(block.data());
+
+                block_opts[block.id()] = Some(new_block);
+            }
+        }
+
+        BlockBuffer {
+            _buffer: buffer,
+            _data_size: data_size,
+            _is_data_accessible: data_blocks_found == data_block_count,
+            _blocks: block_opts,
+            _blocks_raw: blocks_raw,
+            _block_size: block_size,
+            _data_block_count: data_block_count,
+            _parity_block_count: parity_block_count
+        }
     }
 
-    pub fn parity_ptrs(&mut self) -> Vec<*mut u8> {
-        self._buffer.chunks_mut(self._block_size)
-            .map(|c| c.as_mut_ptr())
-            .skip(self._parity_block_count)
-            .collect()
+    pub unsafe fn data_ptrs(&mut self) -> RawBlockBuffer {
+        self._blocks_raw.as_mut_ptr()
+    }
+
+    pub unsafe fn parity_ptrs(&mut self) -> RawBlockBuffer {
+        self._blocks_raw.as_mut_ptr().offset(self._data_block_count as isize)
     }
 
     pub fn block_size(&self) -> usize {
@@ -134,13 +200,20 @@ impl BlockBuffer {
             _    => None
         }
     }
-}
 
-//impl<'a> Index<usize> for BlockBuffer<'a> {
-//    type Output = Option<&'a[u8]>;
-//
-//    fn index(&self, index: usize) -> &Self::Output {
-//        assert!(index < self._all_blocks_view.len());
-//        &self._all_blocks_view[index]
-//    }
-//}
+    pub fn mark_present(&mut self, id: usize) {
+        self._blocks[id] = Some(Block::for_buffer_view(id, self._blocks_raw[id], self._block_size));
+    }
+
+    pub fn mark_absent(&mut self, id: usize) {
+        self._blocks[id] = None;
+    }
+
+    pub fn overwrite_block(&mut self, id: usize, data: &[u8]) {
+        assert!(data.len() <= self._block_size);
+
+        let start = id * self._block_size;
+        let end = start + data.len();
+        self._buffer[start..end].clone_from_slice(data);
+    }
+}

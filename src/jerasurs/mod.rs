@@ -3,12 +3,10 @@ pub mod buffer;
 pub mod codecs;
 
 use libc::{c_int, free, c_void};
-use std::vec::Vec;
 
 use self::native::BitMatrix;
 use self::native::Schedule;
 use self::native::ScheduleCache;
-use self::native::RawBlockBuffer;
 
 use self::buffer::BlockBuffer;
 
@@ -28,7 +26,7 @@ pub struct Codec {
 
 impl Codec {
     pub fn encode(&self, input: &[u8]) -> BlockBuffer {
-        let mut input_vec = input.to_vec();
+        let input_vec = input.to_vec();
         let padding_size = input_vec.len() % self.chunk_size();
         let block_size = (input_vec.len() + padding_size) as usize / self.data_block_count();
 
@@ -43,12 +41,12 @@ impl Codec {
         result
     }
 
-    pub fn decode(&self, input: &mut BlockBuffer) -> Option<Vec<u8>> {
+    pub fn decode<'a>(&self, input: &'a mut BlockBuffer) -> Option<&'a [u8]> {
         if !(self._decoding_technique)(self, input) {
             return None;
         }
         
-        unimplemented!()
+        input.data()
     }
 
     pub fn data_block_count(&self) -> usize {
@@ -84,7 +82,7 @@ impl Drop for Codec {
         unsafe {
             free(self._bit_matrix as *mut c_void);
             native::jerasure_free_schedule(self._schedule);
-            native::jerasure_free_schedule_cache(self._k, self._w, self._schedule_cache);
+            native::jerasure_free_schedule_cache(self._k, self._m, self._schedule_cache);
         }
     }
 }

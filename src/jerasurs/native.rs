@@ -6,8 +6,8 @@ pub type BitMatrix = *mut c_int;
 pub type RawBlockBuffer = *mut *mut u8;
 pub type Erasures = *mut c_int;
 
-#[link(name = "Jerasure")]
-#[link(name = "gf_complete")]
+#[link(name = "Jerasure", kind = "static")]
+#[link(name = "gf_complete", kind = "static")]
 extern {
     pub fn liber8tion_coding_bitmatrix(k: c_int) -> BitMatrix;
 

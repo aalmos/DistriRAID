@@ -40,8 +40,8 @@ pub mod liber8tion {
         unsafe {
             native::jerasure_schedule_encode(
                 codec._k, codec._m, codec._w, codec._schedule,
-                buffer.data_ptrs().as_mut_ptr(),
-                buffer.parity_ptrs().as_mut_ptr(),
+                buffer.data_ptrs(),
+                buffer.parity_ptrs(),
                 buffer.block_size() as c_int,
                 codec._packet_size
             );
@@ -51,13 +51,9 @@ pub mod liber8tion {
     fn decode(codec: &Codec, buffer: &mut BlockBuffer) -> bool {
         let mut erasures = Vec::<c_int>::new();
 
-        {
-            let blocks = buffer.blocks();
-
-            for (block, id) in buffer.blocks().iter().zip(0..buffer.blocks().len()) {
-                if block.is_none() {
-                    erasures.push(id as c_int);
-                }
+        for (block, id) in buffer.blocks().iter().zip(0..buffer.blocks().len()) {
+            if block.is_none() {
+                erasures.push(id as c_int);
             }
         }
 
@@ -68,13 +64,21 @@ pub mod liber8tion {
                 codec._k, codec._m, codec._w,
                 codec._schedule_cache,
                 erasures.as_mut_ptr(),
-                buffer.data_ptrs().as_mut_ptr(),
-                buffer.parity_ptrs().as_mut_ptr(),
+                buffer.data_ptrs(),
+                buffer.parity_ptrs(),
                 buffer.block_size() as c_int,
                 codec._packet_size
             );
 
-            result == 1
+            if result != 0 {
+                return false;
+            }
+
+            for id in erasures[0..erasures.len() - 1].iter() {
+                buffer.mark_present(*id as usize);
+            }
+
+            true
         }
     }
 }
