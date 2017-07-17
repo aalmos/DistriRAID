@@ -211,8 +211,8 @@ impl BlockBuffer {
         self._data_size
     }
 
-    pub fn blocks(&self) -> &Vec<Option<Block>> {
-        &self._blocks
+    pub fn blocks(&self) -> &[Option<Block>] {
+        &self._blocks[..]
     }
 
     pub fn data(&self) -> Option<&[u8]> {
