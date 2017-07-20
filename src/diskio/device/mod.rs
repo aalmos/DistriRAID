@@ -1,14 +1,14 @@
 use std::result;
 use std::ops::Range;
 
-pub enum Error {
+pub enum DeviceError {
     NotFound,
     PermissionDenied,
     InvalidOffset,
     Other(i32)
 }
 
-pub type Result<T> = result::Result<T, Error>;
+pub type Result<T> = result::Result<T, DeviceError>;
 
 pub trait StorageDevice {
     fn read_at(&self, offset: u64, buffer: &mut [u8]) -> Result<usize>;

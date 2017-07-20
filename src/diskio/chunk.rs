@@ -1,11 +1,16 @@
 use std::io::{Read, Write, Cursor};
 use std::vec::Vec;
-use super::device::{Result, StorageDevice};
+use std::result;
+use std::iter::{DoubleEndedIterator, Iterator};
+
+use super::device;
+use super::device::StorageDevice;
 use byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
 
 static CHUNK_HEADER_SIZE: usize = 3 * 8 + 1; // 3 * size_of::<u64>() + size_of::<u8>();
 static CHUNK_FOOTER_SIZE: usize = 8 + 1;     // size_of::<u64>() + size_of::<u8>();
 
+#[derive(Clone)]
 struct ChunkHeader {
     data_size: usize,
     allocated: bool,
@@ -13,18 +18,25 @@ struct ChunkHeader {
     next_free: u64
 }
 
+#[derive(Clone)]
 struct ChunkFooter {
     data_size: usize,
     allocated: bool
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     offset: u64,
     header: ChunkHeader,
 }
 
-pub type ChunkOnDevice = Result<Chunk>;
-pub type ChunkOption = Option<Chunk>;
+pub enum ChunkOperationError {
+    DeviceError(device::DeviceError),
+    OutOfRange,
+    Allocated
+}
+
+pub type ChunkResult = result::Result<Chunk, ChunkOperationError>;
 pub type Buffer = Cursor<Vec<u8>>;
 
 impl ChunkHeader {
@@ -60,18 +72,14 @@ impl ChunkFooter {
 }
 
 impl Chunk {
-    fn _read_device(device: &StorageDevice, offset: u64, size: usize) -> Result<Buffer> {
+    fn _read_device(device: &StorageDevice, offset: u64, size: usize) -> device::Result<Buffer> {
         let mut buffer = vec![0u8; size];
         device.read_at(offset, buffer.as_mut_slice()).map(|_| Cursor::new(buffer))
     }
 
-    pub fn load_from_device(device: &StorageDevice, offset: u64) -> ChunkOnDevice {
-        Self::_read_device(device, offset, CHUNK_HEADER_SIZE).map( |mut reader|
-            Chunk {
-                offset: offset,
-                header: ChunkHeader::load(&mut reader)
-            }
-        )
+    pub fn load_from_device(device: &StorageDevice, offset: u64) -> device::Result<Chunk> {
+        Self::_read_device(device, offset, CHUNK_HEADER_SIZE)
+            .map(|mut reader| Chunk { offset: offset, header: ChunkHeader::load(&mut reader) })
     }
 
     pub fn allocated(&self) -> bool {
@@ -90,49 +98,116 @@ impl Chunk {
         self.header.data_size
     }
 
-    pub fn prev_free_on_device(&self, device: &StorageDevice) -> Option<ChunkOnDevice> {
-        match self.header.prev_free {
-            0    => None,
-            prev => Some(Self::load_from_device(device, prev))
+    pub fn iter_freelist<'a>(&self, device: &'a StorageDevice) -> FreeListIterator<'a> {
+        FreeListIterator {
+            current: self.clone(),
+            device: device
         }
     }
 
-    pub fn next_free_on_device(&self, device: &StorageDevice) -> Option<ChunkOnDevice> {
-        match self.header.next_free {
-            0    => None,
-            next => Some(Self::load_from_device(device, next))
+    pub fn iter_neighbours<'a>(&self, device: &'a StorageDevice) -> FreeNeighbourIterator<'a> {
+        FreeNeighbourIterator {
+            current: self.clone(),
+            device: device
         }
     }
+}
 
-    pub fn prev_free_in_order_from_device(&self, device: &StorageDevice) -> Result<ChunkOption> {
-        let footer_offset = self.offset - CHUNK_FOOTER_SIZE as u64;
-        Self::_read_device(device, footer_offset, CHUNK_FOOTER_SIZE)
-            .map(|mut reader| ChunkFooter::load(&mut reader))
-            .and_then(|footer| {
-                if footer.allocated {
+pub struct FreeListIterator<'a> {
+    current: Chunk,
+    device: &'a StorageDevice
+}
+
+pub struct FreeNeighbourIterator<'a> {
+    current: Chunk,
+    device: &'a StorageDevice
+}
+
+impl<'a> Iterator for FreeListIterator<'a> {
+    type Item = device::Result<Chunk>;
+    fn next(&mut self) -> Option<device::Result<Chunk>> {
+        if self.current.header.next_free == 0 {
+            None
+        } else {
+            let result = Chunk::load_from_device(
+                self.device,
+                self.current.header.next_free);
+
+            match result {
+                Ok(chunk) => {
+                    self.current = chunk.clone();
+                    Some(Ok(chunk))
+                },
+                _ => Some(result)
+            }
+        }
+    }
+}
+
+impl<'a> DoubleEndedIterator for FreeListIterator<'a> {
+    fn next_back(&mut self) -> Option<device::Result<Chunk>> {
+        if self.current.header.prev_free == 0 {
+            None
+        } else {
+            let result = Chunk::load_from_device(
+                self.device,
+                self.current.header.prev_free);
+
+            match result {
+                Ok(chunk) => {
+                    self.current = chunk.clone();
+                    Some(Ok(chunk))
+                },
+                _ => Some(result)
+            }
+        }
+    }
+}
+
+impl<'a> Iterator for FreeNeighbourIterator<'a> {
+    type Item = device::Result<Chunk>;
+    fn next(&mut self) -> Option<device::Result<Chunk>> {
+        let offset = self.current.offset +
+            CHUNK_HEADER_SIZE as u64 +
+            self.current.data_size() as u64 +
+            CHUNK_FOOTER_SIZE as u64;
+
+        match Chunk::load_from_device(self.device, offset) {
+            Ok(Chunk { header: ChunkHeader { allocated: true, .. }, ..}) => None,
+            Ok(chunk) => {
+                self.current = chunk.clone();
+                Some(Ok(chunk))
+            },
+            result => Some(result)
+        }
+    }
+}
+
+impl<'a> DoubleEndedIterator for FreeNeighbourIterator<'a> {
+    fn next_back(&mut self) -> Option<device::Result<Chunk>> {
+        let footer_offset = self.current.offset - CHUNK_FOOTER_SIZE as u64;
+        let footer_result = Chunk::_read_device(self.device, footer_offset, CHUNK_FOOTER_SIZE)
+            .map(|mut reader| ChunkFooter::load(&mut reader));
+
+        match footer_result {
+            Ok(footer) => {
+                if !footer.allocated {
                     let location = footer_offset -
                         footer.data_size as u64 -
                         CHUNK_HEADER_SIZE as u64;
-                    Chunk::load_from_device(device, location)
-                        .map(|chunk| Some(chunk))
+
+                    match Chunk::load_from_device(self.device, location) {
+                        Ok(chunk) => {
+                            self.current = chunk.clone();
+                            Some(Ok(chunk))
+                        },
+                        result => Some(result)
+                    }
                 } else {
-                    Ok(None)
+                    None
                 }
-            })
-    }
-
-    pub fn next_free_in_order_from_device(&self, device: &StorageDevice) -> Result<ChunkOption> {
-        let offset = self.offset +
-            CHUNK_HEADER_SIZE as u64 +
-            self.data_size() as u64 +
-            CHUNK_FOOTER_SIZE as u64;
-
-        Self::load_from_device(device, offset).map(|chunk|
-            if !chunk.allocated() {
-                Some(chunk)
-            } else {
-                None
-            }
-        )
+            },
+            Err(error) => Some(Err(error))
+        }
     }
 }
