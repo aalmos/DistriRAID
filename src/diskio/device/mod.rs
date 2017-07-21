@@ -5,6 +5,7 @@ pub enum DeviceError {
     NotFound,
     PermissionDenied,
     InvalidOffset,
+    NotEnoughSpace,
     Other(i32)
 }
 
