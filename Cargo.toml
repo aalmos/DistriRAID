@@ -1,5 +1,5 @@
 [package]
-name = "hello_rust"
+name = "DistriRAID"
 version = "0.1.0"
 authors = ["Adam Homolya <adam.homolya@gmail.com>"]
 build = "build.rs"

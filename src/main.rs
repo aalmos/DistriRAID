@@ -15,7 +15,7 @@ fn main() {
         .gen_ascii_chars()
         .take(24576)
         .collect();
-    
+
     let mut encoded = codec.encode(input.as_bytes());
 
     encoded.erase_block(0, true);
@@ -28,7 +28,7 @@ fn main() {
             assert_eq!(data, input.as_bytes());
         },
         None => {
-            println!("fuck");
+            println!("omg");
         }
     }
 }
